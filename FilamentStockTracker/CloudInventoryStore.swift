@@ -2,11 +2,11 @@
 //  CloudInventoryStore.swift
 //  FilamentStockTracker
 //
-//  Created by Ozge Sevin Keskin on 25.12.2025.
-//
+
 import Foundation
 import Combine
-import Supabase
+import FirebaseAuth
+import FirebaseFirestore
 import UserNotifications
 
 @MainActor
@@ -17,20 +17,57 @@ final class CloudInventoryStore: ObservableObject {
     @Published var lastError: String? = nil
     @Published var isLoading: Bool = false
 
-    let client: SupabaseClient
+    private let db = Firestore.firestore()
 
-    init(client: SupabaseClient) {
-        self.client = client
+    // MARK: - Firestore paths
+    private func uid() throws -> String {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "Auth", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
+        }
+        return uid
     }
 
+    private func stocksCol() -> CollectionReference {
+        return db.collection("filaments")  // ortak
+    }
+
+    private func logsCol() -> CollectionReference {
+        return db.collection("logs")  // ortak
+    }
+    // MARK: - Refresh (one-shot fetch)
     func refresh() async {
         isLoading = true
         defer { isLoading = false }
 
         do {
             lastError = nil
-            let s: [StockRow] = try await client.from("stock").select().execute().value
-            let l: [LogRow] = try await client.from("log").select().order("created_at", ascending: false).limit(200).execute().value
+
+            let stockSnap = try await stocksCol().getDocuments()
+            let logSnap = try await logsCol()
+                .order(by: "createdAt", descending: true)
+                .limit(to: 200)
+                .getDocuments()
+
+            // Firestore doc -> StockRow/LogRow map
+            let s: [StockRow] = stockSnap.documents.compactMap { doc in
+                StockRow(
+                    material: (doc.data()["material"] as? String) ?? doc.documentID,
+                    quantity: (doc.data()["quantity"] as? Int) ?? 0
+                )
+            }
+
+            let l: [LogRow] = logSnap.documents.compactMap { doc in
+                let d = doc.data()
+                return LogRow(
+                         id: doc.documentID,
+                         created_at: (d["createdAt"] as? Timestamp)?.dateValue(),
+                         material: (d["material"] as? String) ?? "",
+                         delta: (d["delta"] as? Int) ?? 0,
+                         reason: (d["reason"] as? String),
+                         user_email: (d["user_email"] as? String)
+                )
+            }
+
             self.stocks = s.sorted { $0.material < $1.material }
             self.logs = l
         } catch {
@@ -52,19 +89,7 @@ final class CloudInventoryStore: ObservableObject {
         await adjust(material: material, delta: -abs(amount), reason: reason, userEmail: userEmail)
     }
 
-    // MARK: - Internals
-
-    private struct StockUpsert: Codable {
-        let material: String
-        let quantity: Int
-    }
-
-    private struct LogInsert: Codable {
-        let material: String
-        let delta: Int
-        let reason: String
-        let user_email: String?
-    }
+    // MARK: - Internals (transaction)
 
     private func adjust(material: MaterialType, delta: Int, reason: String, userEmail: String?) async {
         guard delta != 0 else { return }
@@ -75,25 +100,46 @@ final class CloudInventoryStore: ObservableObject {
         do {
             lastError = nil
 
-            let current = quantity(for: material)
-            let newQty = max(0, current + delta)
+            let stocksCol = stocksCol()
+            let logsCol = logsCol()
+            
+            // ✅ “unique” karşılığı: docID = material
+            let stockRef = stocksCol.document(material.rawValue)
+            let logRef = logsCol.document()
 
-            // stock upsert (stock.material UNIQUE olmalı)
-            let stockPayload = StockUpsert(material: material.rawValue, quantity: newQty)
-            _ = try await client
-                .from("stock")
-                .upsert(stockPayload, onConflict: "material")
-                .execute()
+            // Transaction: stok güncelle + log ekle
+            _ = try await db.runTransaction { tx, err -> Any? in
+                let snap: DocumentSnapshot
+                do {
+                    snap = try tx.getDocument(stockRef)
+                } catch {
+                    err?.pointee = error as NSError
+                    return nil
+                }
 
-            // log insert
-            let logPayload = LogInsert(material: material.rawValue, delta: delta, reason: reason, user_email: userEmail)
-            _ = try await client
-                .from("log")
-                .insert(logPayload)
-                .execute()
+                let current = (snap.data()?["quantity"] as? Int) ?? 0
+                let newQty = max(0, current + delta)
+
+                tx.setData([
+                    "material": material.rawValue,
+                    "quantity": newQty,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: stockRef, merge: true)
+
+                tx.setData([
+                    "material": material.rawValue,
+                    "delta": delta,
+                    "reason": reason,
+                    "user_email": userEmail ?? "",
+                    "createdAt": FieldValue.serverTimestamp()
+                ], forDocument: logRef)
+
+                return nil
+            }
 
             await refresh()
 
+            let newQty = quantity(for: material)
             if newQty <= lowStockThreshold {
                 await notifyLowStock(material: material, quantity: newQty)
             }
@@ -124,3 +170,4 @@ final class CloudInventoryStore: ObservableObject {
         try? await UNUserNotificationCenter.current().add(req)
     }
 }
+

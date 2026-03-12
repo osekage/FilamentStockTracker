@@ -1,83 +1,97 @@
-//
-//  AuthManager.swift
-//  FilamentStockTracker
-//
-
 import Foundation
 import Combine
-import Supabase
-import Auth
+import FirebaseAuth
 
 @MainActor
 final class AuthManager: ObservableObject {
 
-    @Published private(set) var session: Session? = nil
+    @Published private(set) var user: User? = nil
     @Published var lastError: String? = nil
     @Published var isLoading: Bool = false
 
-    let client: SupabaseClient
-
-    init(client: SupabaseClient) {
-        self.client = client
-    }
-
-    var isSignedIn: Bool { session != nil }
-    var userEmail: String? { session?.user.email }
+    var isSignedIn: Bool { user != nil }
+    var userEmail: String? { user?.email }
 
     // MARK: - Session
 
     func restoreSession() async {
-        do {
-            session = try await client.auth.session
-        } catch {
-            session = nil
-        }
+        user = Auth.auth().currentUser
     }
+    //Mark : -Sign Up
+    
+    func signUp(email:String, password:String) async {
+        isLoading = true
+        defer {isLoading = false}
+        lastError = nil
+        
+        let e = email.trimmingCharacters(in:.whitespacesAndNewlines).lowercased()
+        guard !e.isEmpty else {
+            lastError = "Email boş olamaz."
+            return
+        }
+        guard e.hasSuffix("@fited.co") else {
+            lastError = "Lütfen @fited.co email kullan."
+            return
+        }
+        guard password.count >= 6 else {
+                lastError = "Şifre en az 6 karakter olmalı."
+                return
+            }
 
-    // MARK: - OTP (6-digit)
+            do {
+                let result = try await Auth.auth().createUser(withEmail: e, password: password)
+                user = result.user
+            } catch {
+                lastError = (error as NSError).localizedDescription
+            }
+        
+    }
+    // MARK: - Sign in
 
-    func sendCode(to email: String) async throws {
+    func signIn(email: String, password: String) async {
         isLoading = true
         defer { isLoading = false }
         lastError = nil
 
         let e = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard e.hasSuffix("@fited.co") else {
-            throw NSError(
-                domain: "Auth",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Lütfen @fited.co email kullan."]
-            )
+            lastError = "Lütfen @fited.co email kullan."
+            return
         }
 
-        // Bu çağrı OTP üretir. Mailin 6 haneli "kod" göstermesi için
-        // Supabase template'inde {{ .Token }} olmalı.
-        try await client.auth.signInWithOTP(email: e)
+        do {
+            let result = try await Auth.auth().signIn(withEmail: e, password: password)
+            user = result.user
+        } catch {
+            lastError = (error as NSError).localizedDescription
+        }
     }
 
-    func verifyCode(email: String, code: String) async throws {
+    // MARK: - Forgot password
+
+    func sendPasswordReset(email: String) async {
         isLoading = true
         defer { isLoading = false }
         lastError = nil
 
         let e = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let c = code.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard (6...8).contains(c.count) else {
-            throw NSError(domain: "Auth", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Kod 6–8 haneli olmalı."
-            ])
+        guard !e.isEmpty else {
+            lastError = "Email boş olamaz."
+            return
+        }
+        guard e.hasSuffix("@fited.co") else {
+            lastError = "Lütfen @fited.co email kullan."
+            return
         }
 
-        // Önce email OTP dene, olmazsa signup OTP dene
         do {
-            _ = try await client.auth.verifyOTP(email: e, token: c, type: .email)
+            try await Auth.auth().sendPasswordReset(withEmail: e)
+            lastError = "Şifre yenileme maili gönderildi: \(e)"
         } catch {
-            _ = try await client.auth.verifyOTP(email: e, token: c, type: .signup)
+            lastError = (error as NSError).localizedDescription
         }
-
-        self.session = try await client.auth.session
     }
+
     // MARK: - Sign out
 
     func signOut() async {
@@ -86,10 +100,10 @@ final class AuthManager: ObservableObject {
         lastError = nil
 
         do {
-            try await client.auth.signOut()
-            session = nil
+            try Auth.auth().signOut()
+            user = nil
         } catch {
-            lastError = error.localizedDescription
+            lastError = (error as NSError).localizedDescription
         }
     }
 }

@@ -1,9 +1,3 @@
-//
-//  Models.swift
-//  FilamentStockTracker
-//
-//  Created by Ozge Sevin Keskin on 25.12.2025.
-//
 import Foundation
 
 enum MaterialType: String, CaseIterable, Codable, Identifiable {
@@ -17,17 +11,22 @@ enum MaterialType: String, CaseIterable, Codable, Identifiable {
 }
 
 struct StockRow: Codable, Identifiable, Hashable {
-    // stock.material UNIQUE varsayımı → id olarak material kullanıyoruz
+    // Firestore docID'yi material yapacağız
     var id: String { material }
     let material: String
     let quantity: Int
 }
 
 struct LogRow: Codable, Identifiable, Hashable {
-    let id: UUID
-    let created_at: Date
+    // Firestore docID string
+    let id: String
+
+    // createdAt her log için app tarafından yazılacak ama güvenli olsun
+    let created_at: Date?
+
     let material: String
     let delta: Int
     let reason: String?
     let user_email: String?
 }
+

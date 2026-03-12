@@ -1,6 +1,4 @@
 import SwiftUI
-import Auth
-import Supabase
 
 struct ContentView: View {
     @EnvironmentObject var store: CloudInventoryStore
@@ -8,19 +6,23 @@ struct ContentView: View {
 
     @State private var selectedMaterial: MaterialType = .pp
     @State private var amount: Int = 1
-    @State private var reason: String = "Baskı"
+    @State private var reason: String = "Print"
     private let reasons = ["Print", "Faulty", "Scrap"]
 
     @State private var didBootstrap = false
 
     var body: some View {
-        Group {
+        ZStack(alignment: .bottomLeading) {
+
+            // Main content
             if auth.isSignedIn {
                 mainUI
             } else {
                 AuthView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             // sadece 1 kere çalışsın
             guard !didBootstrap else { return }
@@ -34,9 +36,26 @@ struct ContentView: View {
         .onChange(of: auth.isSignedIn) { _, signedIn in
             if signedIn {
                 Task { await store.refresh() }
+            } else {
+                // store.clear()
+            }
+        }
+        .safeAreaInset(edge: .bottom, alignment: .leading) {
+            if !auth.isSignedIn {
+                Text("Developed by Özge Sevin Keskin")
+                    .font(.footnote)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.white.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.leading, 22)
+                    .padding(.bottom, 18)
+                    .allowsHitTesting(false)
             }
         }
     }
+
 
     private var mainUI: some View {
         NavigationSplitView {
@@ -75,7 +94,22 @@ struct ContentView: View {
                             ForEach(MaterialType.allCases) { Text($0.rawValue).tag($0) }
                         }
 
-                        Stepper("Amount: \(amount)", value: $amount, in: 1...100)
+                        HStack(spacing: 10) {
+                            Text("Amount")
+                            TextField("", value: $amount, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                                .onSubmit {
+                                    // güvenlik: aralığa zorla
+                                    amount = min(max(amount, 1), 1000)
+                                }
+
+                            Stepper("", value: $amount, in: 1...1000)
+                                .labelsHidden()
+
+                            Text("g")
+                                .foregroundStyle(.secondary)
+                        }
 
                         HStack {
                             Button("Add Stock") {
@@ -117,8 +151,14 @@ struct ContentView: View {
                         } else {
                             Table(store.logs) {
                                 TableColumn("Time") { row in
-                                    Text(row.created_at.formatted(date: .abbreviated, time: .shortened))
-                                }.width(160)
+                                    // created_at Date? olabilir → güvenli göster
+                                    if let dt = row.created_at {
+                                        Text(dt.formatted(date: .abbreviated, time: .shortened))
+                                    } else {
+                                        Text("—").foregroundStyle(.secondary)
+                                    }
+                                }
+                                .width(160)
 
                                 TableColumn("Material") { row in Text(row.material) }.width(80)
                                 TableColumn("Δ") { row in Text("\(row.delta)").monospacedDigit() }.width(60)
@@ -151,3 +191,4 @@ struct ContentView: View {
         }
     }
 }
+

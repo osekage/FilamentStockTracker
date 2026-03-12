@@ -1,111 +1,125 @@
-//
-//  AuthView.swift
-//  FilamentStockTracker
-//
-//  Created by Ozge Sevin Keskin on 25.12.2025.
-//
-
 import SwiftUI
 
 struct AuthView: View {
     @EnvironmentObject var auth: AuthManager
 
     @State private var email = ""
-    @State private var code = ""
-    @State private var phase: Phase = .enterEmail
-    @State private var errorText: String?
+    @State private var password = ""
+    @State private var showSignUp = false
 
-    enum Phase { case enterEmail, enterCode }
+    private var isCompanyEmail: Bool {
+        email.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasSuffix("@fited.co")
+    }
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Filament Stock Tracker")
-                .font(.title2)
-                .bold()
+        ZStack {
+            // BACKGROUND
+            Image("filament_wall")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
 
-            if phase == .enterEmail {
-                TextField("company email (…@fited.co)", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    .disabled(auth.isLoading)
+            LinearGradient(
+                colors: [
+                    .black.opacity(0.60),
+                    .black.opacity(0.25),
+                    .black.opacity(0.60)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                Button {
-                    Task { await sendCode() }
-                } label: {
-                    if auth.isLoading {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("Send Code")
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(auth.isLoading || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            // CENTER CARD
+            GroupBox {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "cube.transparent")
+                            .font(.system(size: 26, weight: .semibold))
 
-            } else {
-                Text("Code sent to \(email)")
-                    .foregroundStyle(.secondary)
-
-                TextField("8-digit code", text: $code)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    .disabled(auth.isLoading)
-                    .onChange(of: code) { _, newValue in
-                        let digitsOnly = newValue.filter { $0.isNumber }
-                        code = String(digitsOnly.prefix(8))
-                    }
-
-                Button("Verify") {
-                    Task {
-                        do {
-                            errorText = nil
-                            try await auth.verifyCode(email: email, code: code)
-                        } catch {
-                            errorText = error.localizedDescription
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Filament Stock Tracker")
+                                .font(.title3).bold()
+                            Text("Sign in with your company account")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
                     }
+
+                    VStack(spacing: 10) {
+                        TextField("company email (…@fited.co)", text: $email)
+                            .textFieldStyle(.roundedBorder)
+                            .autocorrectionDisabled()
+                            .disabled(auth.isLoading)
+
+                        SecureField("password", text: $password)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(auth.isLoading)
+                    }
+
+                    if let err = auth.lastError, !err.isEmpty {
+                        let isSuccess = err.starts(with: "Şifre yenileme maili gönderildi")
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundStyle(isSuccess ? .green : .red)
+
+                            Text(err)
+                                .font(.footnote)
+                                .foregroundStyle(isSuccess ? .green : .red)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer()
+                        }
+                        .padding(10)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    Button {
+                        Task { await auth.signIn(email: email, password: password) }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if auth.isLoading { ProgressView().controlSize(.small) }
+                            Text(auth.isLoading ? "Signing in…" : "Sign In")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(auth.isLoading || password.isEmpty || !isCompanyEmail)
+                    .keyboardShortcut(.defaultAction)
+
+                    HStack {
+                        Button("Create account") { showSignUp = true }
+                            .buttonStyle(.bordered)
+                            .disabled(auth.isLoading) // mail yazmadan da açılır
+
+                        Spacer()
+
+                        Button("Forgot password?") {
+                            Task { await auth.sendPasswordReset(email: email) }
+                        }
+                        .buttonStyle(.link)
+                        .disabled(auth.isLoading || !isCompanyEmail)
+                    }
+
+                    Text("Only @fited.co emails are allowed.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                .disabled(auth.isLoading || !(6...8).contains(code.count))
-
-
-                Button("Back") {
-                    phase = .enterEmail
-                    code = ""
-                    auth.lastError = nil
-                }
-                .buttonStyle(.link)
-                .disabled(auth.isLoading)
+                .padding(6)
+                .frame(width: 420)
             }
-
-            if let err = auth.lastError, !err.isEmpty {
-                Text(err)
-                    .foregroundStyle(.red)
-                    .font(.footnote)
-            }
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(radius: 18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .padding(24)
-        .frame(width: 420)
-    }
-
-    // MARK: - Actions
-
-    private func sendCode() async {
-        auth.lastError = nil
-        do {
-            try await auth.sendCode(to: email)
-            phase = .enterCode
-        } catch {
-            // AuthManager zaten lastError set ediyor, ama garanti olsun diye:
-            auth.lastError = error.localizedDescription
-        }
-    }
-
-    private func verify() async {
-        auth.lastError = nil
-        do {
-            try await auth.verifyCode(email: email, code: code)
-            // session geldiyse ContentView route edecek; phase değiştirmen gerekmiyor.
-        } catch {
-            auth.lastError = error.localizedDescription
+      
+        .sheet(isPresented: $showSignUp) {
+            SignUpView().environmentObject(auth)
         }
     }
 }
