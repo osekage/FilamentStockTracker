@@ -125,6 +125,11 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		37971B5E2F63E930001E76F9 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -237,6 +242,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 375CF9B22EFD62E000012B1A /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = 37971B5E2F63E930001E76F9 /* Products */;
+					ProjectRef = 377B4DB82F62A1BB00C29D4A /* FilamentStockTracker.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				375CF9B02EFD62E000012B1A /* FilamentStockTracker */,

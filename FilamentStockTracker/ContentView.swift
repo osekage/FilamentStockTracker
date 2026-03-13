@@ -107,7 +107,7 @@ struct ContentView: View {
                             Stepper("", value: $amount, in: 1...1000)
                                 .labelsHidden()
 
-                            Text("g")
+                            Text("spool")
                                 .foregroundStyle(.secondary)
                         }
 
