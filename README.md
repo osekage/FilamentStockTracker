@@ -1,38 +1,26 @@
-cat > README.md <<'EOF'
 # Filament Stock Tracker (FITED)
 
-macOS desktop app to track filament spool stock with shared cloud state (Supabase) and audit log.
+macOS desktop app to track 3D printing filament spool inventory with shared cloud state (Firebase) and audit log.
 
 ## Features
 - Materials: PP, TPU, PLA, ABS, PETG
-- Add / subtract stock with reason (Baskı / Fire / İade / Diğer)
-- Audit log shows user email (who did what)
-- Company login (example: *@fited.co*)
+- Add / reduce stock with reason (Print, Stock In, etc.)
+- Real-time sync across team members via Firestore
+- Audit log with user email, timestamp, and reason
+- Low stock threshold alert
+- Company login restricted to @fited.co accounts
 
 ## Requirements
-- Xcode 26+
-- macOS 26+
-- Supabase project (DB + Auth)
+- Xcode 15+
+- macOS 13+
+- Firebase project (Firestore + Auth)
 
-## Setup (Supabase)
-Create tables:
-- `stock`
-- `stock_log`
-Create RPC:
-- `adjust_stock`
+## Setup
+1. Clone the repo
+2. Open `FilamentStockTracker.xcodeproj`
+3. Add `GoogleService-Info.plist` to the project (not committed — get it from your Firebase Console or team lead)
+4. In **Signing & Capabilities**, select your own Apple ID as Team
+5. Build & Run (Cmd + R)
 
-Enable Row Level Security + policies to restrict to company users.
-
-## Local Setup
-1) Clone
-2) Open `FilamentStockTracker.xcodeproj`
-3) Create a `Secrets.swift` file **locally** (NOT committed):
-
-```swift
-import Foundation
-
-enum Secrets {
-  static let supabaseURL = URL(string: "https://YOUR_PROJECT.supabase.co")!
-  static let supabaseAnonKey = "YOUR_ANON_KEY"
-}
-
+## Team
+Developed by Özge Sevin Keskin — FITED Teknoloji A.Ş.
